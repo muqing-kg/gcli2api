@@ -1497,17 +1497,16 @@ function updateEmailDisplay(filename, email, managerType = 'normal', tier = null
 
 async function fetchUserEmail(filename) {
     try {
-        showStatus('正在获取用户邮箱和会员等级...', 'info');
+        showStatus('正在获取用户邮箱...', 'info');
         const response = await fetch(`./creds/fetch-email/${encodeURIComponent(filename)}`, {
             method: 'POST',
             headers: getAuthHeaders()
         });
         const data = await response.json();
         if (response.ok && data.user_email) {
-            const tierInfo = data.subscription_tier ? ` [${data.subscription_tier}]` : '';
-            showStatus(`成功获取邮箱: ${data.user_email}${tierInfo}`, 'success');
-            // 直接更新卡片中的邮箱显示（包含等级徽章），不刷新整个列表
-            updateEmailDisplay(filename, data.user_email, 'normal', data.subscription_tier);
+            showStatus(`成功获取邮箱: ${data.user_email}`, 'success');
+            // 直接更新卡片中的邮箱显示，不刷新整个列表
+            updateEmailDisplay(filename, data.user_email, 'normal');
         } else {
             showStatus(data.message || '无法获取用户邮箱', 'error');
         }
@@ -1518,17 +1517,16 @@ async function fetchUserEmail(filename) {
 
 async function fetchAntigravityUserEmail(filename) {
     try {
-        showStatus('正在获取用户邮箱和会员等级...', 'info');
+        showStatus('正在获取用户邮箱...', 'info');
         const response = await fetch(`./creds/fetch-email/${encodeURIComponent(filename)}?mode=antigravity`, {
             method: 'POST',
             headers: getAuthHeaders()
         });
         const data = await response.json();
         if (response.ok && data.user_email) {
-            const tierInfo = data.subscription_tier ? ` [${data.subscription_tier}]` : '';
-            showStatus(`成功获取邮箱: ${data.user_email}${tierInfo}`, 'success');
-            // 直接更新卡片中的邮箱显示（包含等级徽章），不刷新整个列表
-            updateEmailDisplay(filename, data.user_email, 'antigravity', data.subscription_tier);
+            showStatus(`成功获取邮箱: ${data.user_email}`, 'success');
+            // 直接更新卡片中的邮箱显示，不刷新整个列表
+            updateEmailDisplay(filename, data.user_email, 'antigravity');
         } else {
             showStatus(data.message || '无法获取用户邮箱', 'error');
         }

@@ -2,6 +2,7 @@
 凭证管理器
 """
 
+import asyncio
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -86,6 +87,8 @@ class CredentialManager:
                     # 刷新成功，返回凭证
                     credential_data = refreshed_data
                     log.debug(f"Token刷新成功: {filename} (mode={mode})")
+                    # 静默刷新等级（后台任务）
+                    asyncio.create_task(self._silent_refresh_tier(filename, credential_data, mode))
                     return filename, credential_data
                 else:
                     # 刷新失败（_refresh_token内部已自动禁用失效凭证）
@@ -94,6 +97,8 @@ class CredentialManager:
                     continue
             else:
                 # Token有效，直接返回
+                # 静默刷新等级（后台任务）
+                asyncio.create_task(self._silent_refresh_tier(filename, credential_data, mode))
                 return filename, credential_data
 
         # 重试次数用尽
@@ -189,8 +194,34 @@ class CredentialManager:
             log.error(f"Error getting credentials summary: {e}")
             return []
 
+    async def _silent_refresh_tier(self, filename: str, credential_data: Dict[str, Any], mode: str):
+        """静默刷新凭证的会员等级（后台任务，无日志输出）"""
+        try:
+            # 检查是否已有等级
+            state = await self._storage_adapter.get_credential_state(filename, mode=mode)
+            if state and state.get("subscription_tier"):
+                return  # 已有等级，跳过
+
+            # 检查是否有邮箱（只有有邮箱的凭证才刷新等级）
+            if not state or not state.get("user_email"):
+                return  # 无邮箱，跳过
+
+            # 获取等级
+            from .google_oauth_api import get_subscription_tier
+            credentials = Credentials.from_dict(credential_data)
+            if not credentials:
+                return
+
+            tier = await get_subscription_tier(credentials)
+            if tier:
+                await self._storage_adapter.update_credential_state(
+                    filename, {"subscription_tier": tier}, mode=mode
+                )
+        except Exception:
+            pass  # 静默失败，不影响主流程
+
     async def get_or_fetch_user_email(self, credential_name: str, mode: str = "geminicli") -> Optional[str]:
-        """获取或获取用户邮箱地址，同时获取会员等级"""
+        """获取或获取用户邮箱地址"""
         try:
             # 确保已初始化
             await self._ensure_initialized()
@@ -200,20 +231,6 @@ class CredentialManager:
             cached_email = state.get("user_email") if state else None
 
             if cached_email:
-                # 如果有缓存的邮箱但没有等级，尝试获取等级
-                cached_tier = state.get("subscription_tier") if state else None
-                if not cached_tier:
-                    # 异步获取等级（不阻塞返回邮箱）
-                    credential_data = await self._storage_adapter.get_credential(credential_name, mode=mode)
-                    if credential_data:
-                        from .google_oauth_api import Credentials, get_subscription_tier
-                        credentials = Credentials.from_dict(credential_data)
-                        if credentials:
-                            tier = await get_subscription_tier(credentials)
-                            if tier:
-                                await self._storage_adapter.update_credential_state(
-                                    credential_name, {"subscription_tier": tier}, mode=mode
-                                )
                 return cached_email
 
             # 如果没有缓存，从凭证数据获取
@@ -222,7 +239,7 @@ class CredentialManager:
                 return None
 
             # 创建凭证对象并自动刷新 token
-            from .google_oauth_api import Credentials, get_user_email, get_subscription_tier
+            from .google_oauth_api import get_user_email
 
             credentials = Credentials.from_dict(credential_data)
             if not credentials:
@@ -240,16 +257,10 @@ class CredentialManager:
             # 获取邮箱
             email = await get_user_email(credentials)
 
-            # 获取会员等级
-            tier = await get_subscription_tier(credentials)
-
             if email:
-                # 缓存邮箱地址和会员等级
-                state_updates = {"user_email": email}
-                if tier:
-                    state_updates["subscription_tier"] = tier
+                # 缓存邮箱地址
                 await self._storage_adapter.update_credential_state(
-                    credential_name, state_updates, mode=mode
+                    credential_name, {"user_email": email}, mode=mode
                 )
                 return email
 
