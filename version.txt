@@ -1,4 +1,4 @@
-full_hash=fc250061185361ac67bc3fe2b19a338ad8a64b3f
-short_hash=fc25006
-message=Merge branch 'master' of https://github.com/muqing-kg/gcli2api
-date=2026-02-02 21:31:59 +0800
+full_hash=b3c753c3896044008d290c5380287540fd6946e5
+short_hash=b3c753c
+message=refactor: 静默会员等级获取，移除控制台日志输出
+date=2026-02-02 22:20:46 +0800
