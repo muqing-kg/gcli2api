@@ -2,7 +2,7 @@ name: Docker Build and Publish
 
 on:
   workflow_run:
-    workflows: ["Update Version File"]
+    workflows: ["Update Version File", "Sync Upstream"]
     types:
       - completed
     branches:

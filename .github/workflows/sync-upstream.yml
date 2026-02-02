@@ -2,8 +2,8 @@ name: Sync Upstream
 
 on:
   schedule:
-    # 每天 UTC 时间 2:00 运行（北京时间 10:00）
-    - cron: '0 2 * * *'
+    # 每 15 分钟检查一次
+    - cron: '*/15 * * * *'
   workflow_dispatch:  # 支持手动触发
 
 jobs:
@@ -54,9 +54,21 @@ jobs:
           # 尝试自动合并
           if git merge upstream/master -m "chore: sync upstream $(date +%Y-%m-%d)"; then
             echo "合并成功"
-            git push origin master
           else
-            echo "合并冲突，需要手动处理"
-            git merge --abort
-            exit 1
+            echo "检测到冲突，尝试自动解决..."
+            # version.txt 冲突时采用上游版本
+            if git diff --name-only --diff-filter=U | grep -q "^version.txt$"; then
+              git checkout --theirs version.txt
+              git add version.txt
+            fi
+            # 检查是否还有其他未解决的冲突
+            if git diff --name-only --diff-filter=U | grep -v "^version.txt$" | grep -q .; then
+              echo "存在其他冲突文件，需要手动处理："
+              git diff --name-only --diff-filter=U
+              git merge --abort
+              exit 1
+            fi
+            # 完成合并
+            git commit -m "chore: sync upstream $(date +%Y-%m-%d)"
           fi
+          git push origin master
