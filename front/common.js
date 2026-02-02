@@ -250,7 +250,7 @@ function createCredsManager(type) {
             const selectedCount = this.selectedFiles.size;
             document.getElementById(this.getElementId('SelectedCount')).textContent = `已选择 ${selectedCount} 项`;
 
-            const batchBtns = ['Enable', 'Disable', 'Delete', 'Verify'].map(action =>
+            const batchBtns = ['Enable', 'Disable', 'Delete', 'Verify', 'Preview'].map(action =>
                 document.getElementById(this.getElementId(`Batch${action}Btn`))
             );
             batchBtns.forEach(btn => btn && (btn.disabled = selectedCount === 0));
@@ -629,6 +629,7 @@ function createCredCard(credInfo, manager) {
         <button class="cred-btn download" onclick="download${managerType === 'antigravity' ? 'Antigravity' : ''}Cred('${filename}')">下载</button>
         <button class="cred-btn email" onclick="fetch${managerType === 'antigravity' ? 'Antigravity' : ''}UserEmail('${filename}')">查看账号邮箱</button>
         ${managerType === 'antigravity' ? `<button class="cred-btn" style="background-color: #17a2b8;" onclick="toggleAntigravityQuotaDetails('${pathId}')" title="查看该凭证的额度信息">查看额度</button>` : ''}
+        ${managerType !== 'antigravity' ? `<button class="cred-btn" style="background-color: #00bcd4;" onclick="configurePreviewChannel('${filename}')" title="配置Preview通道，启用实验性功能">设置预览</button>` : ''}
         <button class="cred-btn" style="background-color: #ff9800;" onclick="verify${managerType === 'antigravity' ? 'Antigravity' : ''}ProjectId('${filename}')" title="重新获取Project ID，可恢复403错误">检验</button>
         <button class="cred-btn" style="background-color: #9c27b0;" onclick="test${managerType === 'antigravity' ? 'Antigravity' : ''}Credential('${filename}')" title="测试凭证是否可用">消息测试</button>
         <button class="cred-btn" style="background-color: #e91e63;" onclick="toggle${managerType === 'antigravity' ? 'Antigravity' : ''}ErrorDetails('${pathId}')" title="查看该凭证的详细报错信息">查看报错</button>
@@ -1670,6 +1671,50 @@ async function testAntigravityCredential(filename) {
     }
 }
 
+async function configurePreviewChannel(filename) {
+    try {
+        // 显示加载状态
+        showStatus('🔧 正在配置Preview通道，请稍候...', 'info');
+
+        const response = await fetch(`./creds/configure-preview/${encodeURIComponent(filename)}`, {
+            method: 'POST',
+            headers: getAuthHeaders()
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            // 配置成功
+            const successMsg = `✅ 配置成功！\n文件: ${filename}\n状态: ${data.message}`;
+            showStatus(successMsg.replace(/\n/g, '<br>'), 'success');
+            alert(`✅ Preview通道配置成功！\n\n文件: ${filename}\n\n${data.message}\n\nSetting ID: ${data.setting_id || 'N/A'}\nBinding ID: ${data.binding_id || 'N/A'}`);
+
+            // 刷新凭证列表
+            await AppState.creds.refresh();
+        } else {
+            // 配置失败
+            const errorMsg = data.message || '配置失败';
+            const errorDetail = data.error || '';
+            const step = data.step || '';
+
+            let alertMsg = `❌ Preview通道配置失败\n\n文件: ${filename}\n\n${errorMsg}`;
+            if (step) {
+                alertMsg += `\n失败步骤: ${step}`;
+            }
+            if (errorDetail) {
+                alertMsg += `\n\n错误详情: ${errorDetail}`;
+            }
+
+            showStatus(`❌ ${errorMsg}`, 'error');
+            alert(alertMsg);
+        }
+    } catch (error) {
+        const errorMsg = `配置Preview通道失败: ${error.message}`;
+        showStatus(`❌ ${errorMsg}`, 'error');
+        alert(`❌ ${errorMsg}`);
+    }
+}
+
 async function toggleAntigravityQuotaDetails(pathId) {
     const quotaDetails = document.getElementById('quota-' + pathId);
     if (!quotaDetails) return;
@@ -2040,6 +2085,86 @@ async function batchVerifyAntigravityProjectIds() {
         showStatus(`❌ 全部检验失败！失败 ${failCount}/${selectedFiles.length} 个Antigravity凭证`, 'error');
     } else {
         showStatus(`⚠️ 批量检验完成：成功 ${successCount}/${selectedFiles.length} 个，失败 ${failCount} 个`, 'info');
+    }
+
+    console.log(summary);
+    alert(summary);
+}
+
+async function batchConfigurePreview() {
+    const selectedFiles = Array.from(AppState.creds.selectedFiles);
+    if (selectedFiles.length === 0) {
+        showStatus('❌ 请先选择要配置Preview的凭证', 'error');
+        alert('请先选择要配置Preview的凭证');
+        return;
+    }
+
+    if (!confirm(`确定要为 ${selectedFiles.length} 个凭证批量设置Preview通道吗？\n\n将并行配置以加快速度。`)) {
+        return;
+    }
+
+    showStatus(`🔧 正在为 ${selectedFiles.length} 个凭证配置Preview通道，请稍候...`, 'info');
+
+    // 并行执行所有配置请求
+    const promises = selectedFiles.map(async (filename) => {
+        try {
+            const response = await fetch(`./creds/configure-preview/${encodeURIComponent(filename)}`, {
+                method: 'POST',
+                headers: getAuthHeaders()
+            });
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                return {
+                    success: true,
+                    filename,
+                    message: data.message,
+                    setting_id: data.setting_id,
+                    binding_id: data.binding_id
+                };
+            } else {
+                return {
+                    success: false,
+                    filename,
+                    error: data.message || '配置失败',
+                    step: data.step,
+                    errorDetail: data.error
+                };
+            }
+        } catch (error) {
+            return { success: false, filename, error: error.message };
+        }
+    });
+
+    // 等待所有请求完成
+    const results = await Promise.all(promises);
+
+    // 统计结果
+    let successCount = 0;
+    let failCount = 0;
+    const resultMessages = [];
+
+    results.forEach(result => {
+        if (result.success) {
+            successCount++;
+            resultMessages.push(`✅ ${result.filename}: ${result.message || '配置成功'}`);
+        } else {
+            failCount++;
+            const errorMsg = result.step ? `${result.error} (步骤: ${result.step})` : result.error;
+            resultMessages.push(`❌ ${result.filename}: ${errorMsg}`);
+        }
+    });
+
+    await AppState.creds.refresh();
+
+    const summary = `批量配置Preview通道完成！\n\n成功: ${successCount} 个\n失败: ${failCount} 个\n总计: ${selectedFiles.length} 个\n\n详细结果:\n${resultMessages.join('\n')}`;
+
+    if (failCount === 0) {
+        showStatus(`✅ 全部配置成功！成功配置 ${successCount}/${selectedFiles.length} 个凭证的Preview通道`, 'success');
+    } else if (successCount === 0) {
+        showStatus(`❌ 全部配置失败！失败 ${failCount}/${selectedFiles.length} 个凭证`, 'error');
+    } else {
+        showStatus(`⚠️ 批量配置完成：成功 ${successCount}/${selectedFiles.length} 个，失败 ${failCount} 个`, 'info');
     }
 
     console.log(summary);
