@@ -406,20 +406,13 @@ async def get_subscription_tier(credentials: Credentials) -> Optional[str]:
             tier_id = paid_tier.get("id") or current_tier.get("id")
 
             if tier_id:
-                log.info(f"成功获取会员等级: {tier_id}")
                 return tier_id
             else:
-                log.warning("响应中没有等级信息，默认为 FREE")
                 return "FREE"
-        elif response.status_code == 403:
-            log.warning("获取会员等级失败: 403 Forbidden")
-            return None
         else:
-            log.warning(f"获取会员等级失败: HTTP {response.status_code}")
             return None
 
-    except Exception as e:
-        log.error(f"获取会员等级失败: {e}")
+    except Exception:
         return None
 
 
