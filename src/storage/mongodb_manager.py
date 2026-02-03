@@ -370,6 +370,9 @@ class MongoDBManager:
         """存储或更新凭证"""
         self._ensure_initialized()
 
+        # 统一使用 basename 处理文件名
+        filename = os.path.basename(filename)
+
         try:
             collection_name = self._get_collection_name(mode)
             collection = self._db[collection_name]
@@ -444,6 +447,9 @@ class MongoDBManager:
         """获取凭证数据"""
         self._ensure_initialized()
 
+        # 统一使用 basename 处理文件名
+        filename = os.path.basename(filename)
+
         try:
             collection_name = self._get_collection_name(mode)
             collection = self._db[collection_name]
@@ -486,6 +492,9 @@ class MongoDBManager:
     async def delete_credential(self, filename: str, mode: str = "geminicli") -> bool:
         """删除凭证"""
         self._ensure_initialized()
+
+        # 统一使用 basename 处理文件名
+        filename = os.path.basename(filename)
 
         try:
             collection_name = self._get_collection_name(mode)
@@ -597,6 +606,9 @@ class MongoDBManager:
         """更新凭证状态"""
         self._ensure_initialized()
 
+        # 统一使用 basename 处理文件名
+        filename = os.path.basename(filename)
+
         try:
             collection_name = self._get_collection_name(mode)
             collection = self._db[collection_name]
@@ -626,6 +638,9 @@ class MongoDBManager:
     async def get_credential_state(self, filename: str, mode: str = "geminicli") -> Dict[str, Any]:
         """获取凭证状态（不包含error_messages）"""
         self._ensure_initialized()
+
+        # 统一使用 basename 处理文件名
+        filename = os.path.basename(filename)
 
         try:
             collection_name = self._get_collection_name(mode)
@@ -959,6 +974,9 @@ class MongoDBManager:
         """
         self._ensure_initialized()
 
+        # 统一使用 basename 处理文件名
+        filename = os.path.basename(filename)
+
         try:
             collection_name = self._get_collection_name(mode)
             collection = self._db[collection_name]
@@ -1014,6 +1032,9 @@ class MongoDBManager:
             是否成功
         """
         self._ensure_initialized()
+
+        # 统一使用 basename 处理文件名
+        filename = os.path.basename(filename)
 
         try:
             collection_name = self._get_collection_name(mode)
