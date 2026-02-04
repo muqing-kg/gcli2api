@@ -195,28 +195,38 @@ class CredentialManager:
             return []
 
     async def _silent_refresh_tier(self, filename: str, credential_data: Dict[str, Any], mode: str):
-        """静默刷新凭证的会员等级（后台任务，无日志输出）"""
-        try:
-            # 检查是否已有等级
-            state = await self._storage_adapter.get_credential_state(filename, mode=mode)
-            if state and state.get("subscription_tier"):
-                return  # 已有等级，跳过
+        """静默刷新凭证的会员等级（后台任务，无日志输出）
 
-            # 检查是否有邮箱（只有有邮箱的凭证才刷新等级）
+        当检测到等级升级（FREE -> PRO/ULTRA）时，自动清除所有模型冷却时间
+        """
+        try:
+            state = await self._storage_adapter.get_credential_state(filename, mode=mode)
             if not state or not state.get("user_email"):
                 return  # 无邮箱，跳过
 
-            # 获取等级
+            old_tier = state.get("subscription_tier")
+
+            # 如果已有等级且没有冷却中的模型，跳过刷新
+            model_cooldowns = state.get("model_cooldowns", {})
+            if old_tier and not model_cooldowns:
+                return
+
             from .google_oauth_api import get_subscription_tier
             credentials = Credentials.from_dict(credential_data)
             if not credentials:
                 return
 
-            tier = await get_subscription_tier(credentials)
-            if tier:
-                await self._storage_adapter.update_credential_state(
-                    filename, {"subscription_tier": tier}, mode=mode
-                )
+            new_tier = await get_subscription_tier(credentials)
+            if not new_tier:
+                return
+
+            updates = {"subscription_tier": new_tier}
+
+            # 等级变化时清除所有模型冷却（升级或降级都会重置额度）
+            if old_tier and old_tier.lower() != new_tier.lower() and model_cooldowns:
+                updates["model_cooldowns"] = {}
+
+            await self._storage_adapter.update_credential_state(filename, updates, mode=mode)
         except Exception:
             pass  # 静默失败，不影响主流程
 
