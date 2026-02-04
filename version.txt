@@ -1,4 +1,4 @@
-full_hash=030ea235f696ba0a2f215d8da8feb632d7c24957
-short_hash=030ea23
-message=修改所有数据库操作，确保始终使用 basename 进行存储和查询
-date=2026-02-03 22:17:12 +0800
+full_hash=f28fa7f61526fdf5d058616d937014af62d276a5
+short_hash=f28fa7f
+message=fix: 会员等级变化时自动清除模型冷却时间
+date=2026-02-04 15:01:35 +0800
