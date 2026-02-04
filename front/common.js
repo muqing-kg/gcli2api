@@ -589,7 +589,6 @@ function createCredCard(credInfo, manager) {
     }
 
     // 模型级冷却状态
-    let hasActiveCooldowns = false;
     if (credInfo.model_cooldowns && Object.keys(credInfo.model_cooldowns).length > 0) {
         const currentTime = Date.now() / 1000;
         const activeCooldowns = Object.entries(credInfo.model_cooldowns)
@@ -606,7 +605,6 @@ function createCredCard(credInfo, manager) {
             });
 
         if (activeCooldowns.length > 0) {
-            hasActiveCooldowns = true;
             activeCooldowns.slice(0, 2).forEach(item => {
                 statusBadges += `<span class="cooldown-badge" style="background-color: #17a2b8;" title="模型: ${item.fullModel}">🔧 ${item.model}: ${item.time}</span>`;
             });
@@ -632,7 +630,6 @@ function createCredCard(credInfo, manager) {
         <button class="cred-btn email" onclick="fetch${managerType === 'antigravity' ? 'Antigravity' : ''}UserEmail('${filename}')">查看账号邮箱</button>
         ${managerType === 'antigravity' ? `<button class="cred-btn" style="background-color: #17a2b8;" onclick="toggleAntigravityQuotaDetails('${pathId}')" title="查看该凭证的额度信息">查看额度</button>` : ''}
         ${managerType !== 'antigravity' ? `<button class="cred-btn" style="background-color: #00bcd4;" onclick="configurePreviewChannel('${filename}')" title="配置Preview通道，启用实验性功能">设置预览</button>` : ''}
-        ${hasActiveCooldowns ? `<button class="cred-btn" style="background-color: #795548;" data-filename="${filename}" data-action="clear_cooldown" title="清除所有模型的冷却时间">清除冷却</button>` : ''}
         <button class="cred-btn" style="background-color: #ff9800;" onclick="verify${managerType === 'antigravity' ? 'Antigravity' : ''}ProjectId('${filename}')" title="重新获取Project ID，可恢复403错误">检验</button>
         <button class="cred-btn" style="background-color: #9c27b0;" onclick="test${managerType === 'antigravity' ? 'Antigravity' : ''}Credential('${filename}')" title="测试凭证是否可用">消息测试</button>
         <button class="cred-btn" style="background-color: #e91e63;" onclick="toggle${managerType === 'antigravity' ? 'Antigravity' : ''}ErrorDetails('${pathId}')" title="查看该凭证的详细报错信息">查看报错</button>

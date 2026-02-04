@@ -789,18 +789,6 @@ async def creds_action(
                 log.error(f"删除凭证 {filename} 时出错: {e}")
                 raise HTTPException(status_code=500, detail=f"删除文件失败: {str(e)}")
 
-        elif action == "clear_cooldown":
-            log.info(f"Web请求: 清除凭证 {filename} 的模型冷却时间 (mode={mode})")
-            result = await storage_adapter.update_credential_state(
-                filename, {"model_cooldowns": {}}, mode=mode
-            )
-            if result:
-                log.info(f"Web请求: 凭证 {filename} 的模型冷却时间已清除 (mode={mode})")
-                return JSONResponse(content={"message": f"已清除凭证 {os.path.basename(filename)} 的模型冷却时间"})
-            else:
-                log.error(f"Web请求: 清除凭证 {filename} 的模型冷却时间失败 (mode={mode})")
-                raise HTTPException(status_code=500, detail="清除冷却时间失败")
-
         else:
             raise HTTPException(status_code=400, detail="无效的操作类型")
 
