@@ -1,4 +1,4 @@
-full_hash=15e3a03ea8af52231ab5e81eda68895a2e059f5e
-short_hash=15e3a03
-message=feat: 查看额度时自动清除不合理的模型冷却时间
-date=2026-02-04 16:16:41 +0800
+full_hash=20a2b5370cb8e44b3c639cf90beda9acd473f1fa
+short_hash=20a2b53
+message=refactor: 移除手动清除冷却按钮，仅保留自动清除
+date=2026-02-04 16:21:41 +0800
