@@ -1,4 +1,4 @@
-full_hash=f28fa7f61526fdf5d058616d937014af62d276a5
-short_hash=f28fa7f
-message=fix: 会员等级变化时自动清除模型冷却时间
-date=2026-02-04 15:01:35 +0800
+full_hash=d9e804cf347b684aba4e4e9fe6a1b78a61076ab7
+short_hash=d9e804c
+message=feat: 添加手动清除模型冷却时间功能
+date=2026-02-04 15:52:31 +0800
