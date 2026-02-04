@@ -1831,8 +1831,20 @@ async function toggleAntigravityQuotaDetails(pathId) {
                         contentDiv.innerHTML = quotaHTML;
                     }
 
-                    // 刷新凭证列表以更新冷却时间显示（后端可能已自动清除不合理的冷却）
-                    await AppState.antigravityCreds.refresh();
+                    // 实时更新冷却显示（不刷新页面）
+                    // 1. 清空内存中的冷却数据
+                    const credData = AppState.antigravityCreds.data[filename];
+                    if (credData) {
+                        credData.model_cooldowns = {};
+                    }
+                    // 2. 移除当前卡片的冷却徽章
+                    const quotaPanel = document.getElementById('quota-' + pathId);
+                    if (quotaPanel) {
+                        const credCard = quotaPanel.closest('.cred-item');
+                        if (credCard) {
+                            credCard.querySelectorAll('.cooldown-badge').forEach(badge => badge.remove());
+                        }
+                    }
 
                     showStatus('✅ 成功加载额度信息', 'success');
                 } else {
