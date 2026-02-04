@@ -1114,10 +1114,40 @@ async def get_credential_quota(
         quota_info = await fetch_quota_info(access_token)
 
         if quota_info.get("success"):
+            # 自动清除不合理的冷却时间：有额度但却在冷却中的模型
+            models_quota = quota_info.get("models", {})
+            if models_quota:
+                # 获取当前凭证的冷却状态
+                cred_state = await storage_adapter.get_credential_state(filename, mode=mode)
+                model_cooldowns = cred_state.get("model_cooldowns", {}) if cred_state else {}
+
+                if model_cooldowns:
+                    import time as time_module
+                    current_time = time_module.time()
+                    models_to_clear = []
+
+                    for model_name, cooldown_until in model_cooldowns.items():
+                        # 检查冷却是否仍然有效
+                        if cooldown_until > current_time:
+                            # 检查该模型是否有剩余额度（> 5%）
+                            model_quota = models_quota.get(model_name, {})
+                            remaining = model_quota.get("remaining", 0)
+                            if remaining > 0.05:
+                                models_to_clear.append(model_name)
+                                log.info(f"自动清除冷却: {filename} 模型 {model_name} 有 {remaining*100:.1f}% 剩余额度")
+
+                    # 清除不合理的冷却时间
+                    if models_to_clear:
+                        new_cooldowns = {k: v for k, v in model_cooldowns.items() if k not in models_to_clear}
+                        await storage_adapter.update_credential_state(
+                            filename, {"model_cooldowns": new_cooldowns}, mode=mode
+                        )
+                        log.info(f"已自动清除 {filename} 的 {len(models_to_clear)} 个模型冷却时间")
+
             return JSONResponse(content={
                 "success": True,
                 "filename": filename,
-                "models": quota_info.get("models", {})
+                "models": models_quota
             })
         else:
             return JSONResponse(

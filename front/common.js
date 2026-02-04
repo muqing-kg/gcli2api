@@ -1834,6 +1834,9 @@ async function toggleAntigravityQuotaDetails(pathId) {
                         contentDiv.innerHTML = quotaHTML;
                     }
 
+                    // 刷新凭证列表以更新冷却时间显示（后端可能已自动清除不合理的冷却）
+                    await AppState.antigravityCreds.refresh();
+
                     showStatus('✅ 成功加载额度信息', 'success');
                 } else {
                     // 失败时显示错误
