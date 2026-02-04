@@ -1,4 +1,4 @@
-full_hash=d9e804cf347b684aba4e4e9fe6a1b78a61076ab7
-short_hash=d9e804c
-message=feat: 添加手动清除模型冷却时间功能
-date=2026-02-04 15:52:31 +0800
+full_hash=15e3a03ea8af52231ab5e81eda68895a2e059f5e
+short_hash=15e3a03
+message=feat: 查看额度时自动清除不合理的模型冷却时间
+date=2026-02-04 16:16:41 +0800
