@@ -1,4 +1,4 @@
-full_hash=05fa814b02046cfac4f6f537c44cecc7772d3a5f
-short_hash=05fa814
-message=fix: 查看额度时实时更新冷却显示而非刷新页面
-date=2026-02-04 22:34:00 +0800
+full_hash=932829e5423cbc78adc22a84305e91a764ecbd4d
+short_hash=932829e
+message=Update sqlite_manager.py
+date=2026-02-05 12:16:20 +0800
