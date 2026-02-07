@@ -1,4 +1,4 @@
-full_hash=e098b12c507d658dabe9da4b081d8fb9a2b328a1
-short_hash=e098b12
-message=修正弹窗的链接显示
-date=2026-02-07 09:54:45 +0800
+full_hash=d6901222482bb49fc28952a5dbc5c01c16dfb067
+short_hash=d690122
+message=Update antigravity.py
+date=2026-02-07 12:18:06 +0800
