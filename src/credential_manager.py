@@ -211,11 +211,9 @@ class CredentialManager:
         """
         try:
             state = await self._storage_adapter.get_credential_state(filename, mode=mode)
-            if not state or not state.get("user_email"):
-                return
 
-            old_tier = state.get("subscription_tier")
-            model_cooldowns = state.get("model_cooldowns", {})
+            old_tier = state.get("subscription_tier") if state else None
+            model_cooldowns = state.get("model_cooldowns", {}) if state else {}
 
             # 已有等级且无冷却，跳过刷新
             if old_tier and not model_cooldowns:
