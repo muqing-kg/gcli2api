@@ -1,4 +1,4 @@
-full_hash=1c41bae532214a5c452eb8138b5446fc620cb66d
-short_hash=1c41bae
-message=chore: sync upstream 2026-02-12
-date=2026-02-12 09:19:33 +0800
+full_hash=2a72a4c537e91920c52eb4a93f8faae57789a59b
+short_hash=2a72a4c
+message=feat: 凭证入库自动初始化等级和邮箱，首页加载批量补刷缺失等级
+date=2026-02-12 09:59:19 +0800
