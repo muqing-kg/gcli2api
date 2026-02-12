@@ -1,4 +1,4 @@
-full_hash=2a72a4c537e91920c52eb4a93f8faae57789a59b
-short_hash=2a72a4c
-message=feat: 凭证入库自动初始化等级和邮箱，首页加载批量补刷缺失等级
-date=2026-02-12 09:59:19 +0800
+full_hash=06f97e5a7b1876eb69dd01fd9cbf02d620344393
+short_hash=06f97e5
+message=refactor: 移除_silent_refresh_tier中多余的邮箱检查
+date=2026-02-12 10:02:03 +0800
