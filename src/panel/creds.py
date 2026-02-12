@@ -236,6 +236,10 @@ async def get_creds_status_common(
 
 
 
+    # 首页加载时，后台刷新无等级凭证的会员等级
+    if offset == 0:
+        asyncio.create_task(credential_manager.refresh_missing_tiers(mode=mode))
+
     storage_adapter = await get_storage_adapter()
     backend_info = await storage_adapter.get_backend_info()
     backend_type = backend_info.get("backend_type", "unknown")

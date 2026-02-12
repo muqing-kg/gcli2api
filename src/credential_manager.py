@@ -113,6 +113,7 @@ class CredentialManager:
         await self._ensure_initialized()
         await self._storage_adapter.store_credential(credential_name, credential_data)
         log.info(f"Credential added/updated: {credential_name}")
+        asyncio.create_task(self._init_credential_metadata(credential_name, credential_data, "geminicli"))
 
     async def add_antigravity_credential(self, credential_name: str, credential_data: Dict[str, Any]):
         """
@@ -122,6 +123,15 @@ class CredentialManager:
         await self._ensure_initialized()
         await self._storage_adapter.store_credential(credential_name, credential_data, mode="antigravity")
         log.info(f"Antigravity credential added/updated: {credential_name}")
+        asyncio.create_task(self._init_credential_metadata(credential_name, credential_data, "antigravity"))
+
+    async def _init_credential_metadata(self, filename: str, credential_data: Dict[str, Any], mode: str):
+        """入库后静默初始化凭证的等级和邮箱"""
+        try:
+            await self.get_or_fetch_user_email(filename, mode=mode)
+            await self._silent_refresh_tier(filename, credential_data, mode)
+        except Exception:
+            pass
 
     async def remove_credential(self, credential_name: str, mode: str = "geminicli") -> bool:
         """删除一个凭证"""
@@ -202,12 +212,12 @@ class CredentialManager:
         try:
             state = await self._storage_adapter.get_credential_state(filename, mode=mode)
             if not state or not state.get("user_email"):
-                return  # 无邮箱，跳过
+                return
 
             old_tier = state.get("subscription_tier")
-
-            # 如果已有等级且没有冷却中的模型，跳过刷新
             model_cooldowns = state.get("model_cooldowns", {})
+
+            # 已有等级且无冷却，跳过刷新
             if old_tier and not model_cooldowns:
                 return
 
@@ -229,6 +239,21 @@ class CredentialManager:
             await self._storage_adapter.update_credential_state(filename, updates, mode=mode)
         except Exception:
             pass  # 静默失败，不影响主流程
+
+    async def refresh_missing_tiers(self, mode: str = "geminicli"):
+        """后台批量刷新无等级凭证的会员等级"""
+        try:
+            await self._ensure_initialized()
+            all_states = await self._storage_adapter.get_all_credential_states(mode=mode)
+
+            for filename, state in all_states.items():
+                if state.get("subscription_tier") or state.get("disabled"):
+                    continue
+                credential_data = await self._storage_adapter.get_credential(filename, mode=mode)
+                if credential_data:
+                    asyncio.create_task(self._silent_refresh_tier(filename, credential_data, mode))
+        except Exception:
+            pass
 
     async def get_or_fetch_user_email(self, credential_name: str, mode: str = "geminicli") -> Optional[str]:
         """获取或获取用户邮箱地址"""
