@@ -1910,6 +1910,8 @@
                         <button class="batch-btn batch-email" onclick="refreshAllAntigravityEmails()">刷新所有邮箱</button>
                         <button class="batch-btn" style="background-color: #e91e63;"
                             onclick="deduplicateAntigravityByEmail()">凭证一键去重</button>
+                        <button class="batch-btn" style="background-color: #795548; color: white;"
+                            onclick="showQuotaThresholdDialog()">配额保护</button>
                     </div>
                 </div>
 
@@ -2352,6 +2354,29 @@
                         style="color: #007bff; text-decoration: none;">https://github.com/su-kaka/gcli2api</a></p>
                 <p style="margin: 5px 0; font-size: 14px; color: #dc3545; font-weight: 500;">⚠️ 禁止商业用途和倒卖 - 仅供学习使用 ⚠️
                 </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 配额保护设置弹窗 -->
+    <div class="modal" id="quotaThresholdModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title">⚡ 配额保护设置</h4>
+                <button class="modal-close" onclick="closeQuotaThresholdDialog()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="margin:0 0 12px;color:#666;font-size:13px;">同供应商联动：Claude某模型到额度→该凭证所有Claude冷却；Gemini同理。Claude与Gemini互不影响。</p>
+                <div class="form-group" style="margin:0;">
+                    <label for="quotaThresholdInput">冷却阈值 (%):</label>
+                    <input type="number" id="quotaThresholdInput" class="config-input"
+                        min="0" max="100" step="1" placeholder="0" style="width:100px;display:inline-block;" />
+                    <span style="color:#666;font-size:13px;margin-left:4px;">% （0 = 不启用，100 = 禁用所有模型）</span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" style="background-color:#6c757d;" onclick="closeQuotaThresholdDialog()">取消</button>
+                <button class="btn" style="background-color:#795548;" onclick="saveQuotaThreshold()">保存</button>
             </div>
         </div>
     </div>

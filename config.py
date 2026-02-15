@@ -39,6 +39,7 @@ ENV_MAPPINGS = {
     "COMPATIBILITY_MODE": "compatibility_mode_enabled",
     "RETURN_THOUGHTS_TO_FRONTEND": "return_thoughts_to_frontend",
     "ANTIGRAVITY_STREAM2NOSTREAM": "antigravity_stream2nostream",
+    "ANTIGRAVITY_QUOTA_THRESHOLD": "antigravity_quota_threshold",
     "HOST": "host",
     "PORT": "port",
     "API_PASSWORD": "api_password",
@@ -350,6 +351,25 @@ async def get_antigravity_stream2nostream() -> bool:
         return env_value.lower() in ("true", "1", "yes", "on")
 
     return bool(await get_config_value("antigravity_stream2nostream", True))
+
+
+async def get_antigravity_quota_threshold() -> float:
+    """
+    Antigravity 配额阈值 (0-1)。
+    同供应商联动：任意模型低于阈值时冷却该凭证下同供应商所有模型。
+    0 = 禁用，1 = 禁用所有。
+    """
+    env_value = os.getenv("ANTIGRAVITY_QUOTA_THRESHOLD")
+    if env_value:
+        try:
+            return max(0.0, min(1.0, float(env_value)))
+        except ValueError:
+            pass
+
+    try:
+        return max(0.0, min(1.0, float(await get_config_value("antigravity_quota_threshold", 0))))
+    except (ValueError, TypeError):
+        return 0
 
 
 async def get_oauth_proxy_url() -> str:

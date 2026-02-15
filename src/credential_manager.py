@@ -165,6 +165,26 @@ class CredentialManager:
             log.error(f"Error updating credential state {credential_name}: {e}")
             return False
 
+    async def set_model_cooldown(
+        self,
+        credential_name: str,
+        model_name: str,
+        cooldown_until: Optional[float],
+        mode: str = "geminicli"
+    ) -> bool:
+        """设置凭证在指定模型上的冷却时间"""
+        await self._ensure_initialized()
+        try:
+            backend = self._storage_adapter._backend
+            if not hasattr(backend, "set_model_cooldown"):
+                return False
+            return await backend.set_model_cooldown(
+                credential_name, model_name, cooldown_until, mode=mode
+            )
+        except Exception as e:
+            log.error(f"Error setting model cooldown {credential_name}/{model_name}: {e}")
+            return False
+
     async def set_cred_disabled(self, credential_name: str, disabled: bool, mode: str = "geminicli"):
         """设置凭证的启用/禁用状态"""
         try:

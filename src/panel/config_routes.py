@@ -61,6 +61,9 @@ async def get_config(token: str = Depends(verify_panel_token)):
         # Antigravity流式转非流式配置
         current_config["antigravity_stream2nostream"] = await config.get_antigravity_stream2nostream()
 
+        # Antigravity Claude 配额阈值保护
+        current_config["antigravity_quota_threshold"] = await config.get_antigravity_quota_threshold()
+
         # 服务器配置
         current_config["host"] = await config.get_server_host()
         current_config["port"] = await config.get_server_port()
@@ -139,6 +142,15 @@ async def save_config(request: ConfigSaveRequest, token: str = Depends(verify_pa
         if "antigravity_stream2nostream" in new_config:
             if not isinstance(new_config["antigravity_stream2nostream"], bool):
                 raise HTTPException(status_code=400, detail="Antigravity流式转非流式开关必须是布尔值")
+
+        if "antigravity_quota_threshold" in new_config:
+            try:
+                val = float(new_config["antigravity_quota_threshold"])
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=400, detail="配额阈值必须是有效数字")
+            if val < 0 or val > 1:
+                raise HTTPException(status_code=400, detail="配额阈值必须在0-1之间")
+            new_config["antigravity_quota_threshold"] = val
 
         # 验证服务器配置
         if "host" in new_config:

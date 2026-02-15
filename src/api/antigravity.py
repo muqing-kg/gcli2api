@@ -5,6 +5,7 @@ Antigravity API Client - Handles communication with Google's Antigravity API
 
 import asyncio
 import json
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -12,6 +13,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import Response
 from config import (
     get_antigravity_api_url,
+    get_antigravity_quota_threshold,
     get_antigravity_stream2nostream,
     get_auto_ban_error_codes,
 )
@@ -69,6 +71,164 @@ def build_antigravity_headers(access_token: str, model_name: str = "") -> Dict[s
             headers['requestType'] = request_type
 
     return headers
+
+
+# ==================== 配额阈值保护 ====================
+
+_QUOTA_CACHE_TTL = 60.0
+_QUOTA_FALLBACK_COOLDOWN = 300.0
+_quota_cache: Dict[str, Dict[str, Any]] = {}
+_quota_cache_locks: Dict[str, asyncio.Lock] = {}
+
+
+def _parse_reset_time_raw(reset_time_raw: str) -> Optional[float]:
+    """将 resetTimeRaw 转为 Unix 时间戳"""
+    if not reset_time_raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(reset_time_raw.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).timestamp()
+    except Exception:
+        return None
+
+
+def _build_quota_model_candidates(model_name: str) -> List[str]:
+    """构建 quota 模型名候选（兼容 thinking/非 thinking 变体和 models/ 前缀）"""
+    if not model_name:
+        return []
+    base = model_name.removeprefix("models/") if model_name.startswith("models/") else model_name
+    candidates = [model_name, base]
+    tokens = base.split("-")
+    if "thinking" in tokens:
+        non_thinking = "-".join(t for t in tokens if t != "thinking")
+        if non_thinking:
+            candidates.append(non_thinking)
+    else:
+        candidates.append(f"{base}-thinking")
+    return list(dict.fromkeys(c for c in candidates if c))
+
+
+def _get_model_vendor(model_name: str) -> str:
+    """提取模型供应商前缀：claude / gemini / 其他"""
+    name = model_name.lower().removeprefix("models/")
+    if name.startswith("claude"):
+        return "claude"
+    if name.startswith("gemini"):
+        return "gemini"
+    return name.split("-")[0] if "-" in name else name
+
+
+async def _get_quota_cached(credential_name: str, access_token: str) -> Dict[str, Any]:
+    """获取额度信息（带 60s 缓存，token 感知，按凭据粒度锁）"""
+    token_marker = access_token[-8:] if access_token else ""
+    cached = _quota_cache.get(credential_name)
+    if cached and time.time() - cached.get("ts", 0) < _QUOTA_CACHE_TTL and cached.get("tok") == token_marker:
+        return cached["data"]
+
+    if credential_name not in _quota_cache_locks:
+        _quota_cache_locks[credential_name] = asyncio.Lock()
+    async with _quota_cache_locks[credential_name]:
+        cached = _quota_cache.get(credential_name)
+        if cached and time.time() - cached.get("ts", 0) < _QUOTA_CACHE_TTL and cached.get("tok") == token_marker:
+            return cached["data"]
+        quota_info = await fetch_quota_info(access_token)
+        if quota_info.get("success"):
+            _quota_cache[credential_name] = {"ts": time.time(), "data": quota_info, "tok": token_marker}
+        else:
+            _quota_cache.pop(credential_name, None)
+        return quota_info
+
+
+async def _check_and_apply_quota_threshold(
+    credential_name: str,
+    access_token: str,
+    model_name: str,
+) -> bool:
+    """
+    配额阈值保护：同供应商任意模型低于阈值时，冷却该凭证下该供应商的所有模型。
+    Claude 与 Gemini 互不影响，各自按自己的 resetTime 冷却。
+    阈值 0 = 禁用，1 = 禁用所有。
+    """
+    if not model_name:
+        return True
+
+    threshold = await get_antigravity_quota_threshold()
+    if threshold <= 0:
+        return True
+
+    quota_info = await _get_quota_cached(credential_name, access_token)
+    if not quota_info.get("success"):
+        return True
+
+    models_quota = quota_info.get("models", {})
+    vendor = _get_model_vendor(model_name)
+
+    # 收集同供应商所有模型的配额
+    vendor_models = {
+        k: v for k, v in models_quota.items()
+        if isinstance(v, dict) and _get_model_vendor(k) == vendor
+    }
+    if not vendor_models:
+        return True
+
+    # 检查同供应商是否有任意模型低于阈值
+    triggered_model = None
+    triggered_remaining = None
+    triggered_reset = None
+    for qm_name, qm_data in vendor_models.items():
+        try:
+            remaining = float(qm_data.get("remaining", 0.0))
+        except (TypeError, ValueError):
+            continue
+        if remaining <= threshold:
+            triggered_model = qm_name
+            triggered_remaining = remaining
+            triggered_reset = qm_data.get("resetTimeRaw")
+            break
+
+    if triggered_model is None:
+        return True
+
+    # 解析冷却截止时间
+    cooldown_until = _parse_reset_time_raw(str(triggered_reset or ""))
+    now = time.time()
+    if cooldown_until is None or cooldown_until <= now:
+        cooldown_until = now + _QUOTA_FALLBACK_COOLDOWN
+        log.warning(
+            f"[ANTIGRAVITY QUOTA] resetTimeRaw 缺失或已过期，应用临时冷却 {_QUOTA_FALLBACK_COOLDOWN}s: "
+            f"credential={credential_name}, vendor={vendor}"
+        )
+
+    # 冷却该凭证下同供应商的所有模型（含请求模型本身及 quota 返回的所有同供应商模型）
+    cooldown_targets: set = set()
+    cooldown_targets.add(model_name)
+    for c in _build_quota_model_candidates(model_name):
+        cooldown_targets.add(c)
+    for qm_name in vendor_models:
+        cooldown_targets.add(qm_name)
+        for c in _build_quota_model_candidates(qm_name):
+            cooldown_targets.add(c)
+
+    for target in cooldown_targets:
+        await credential_manager.set_model_cooldown(
+            credential_name=credential_name,
+            model_name=target,
+            cooldown_until=cooldown_until,
+            mode="antigravity",
+        )
+
+    _quota_cache.pop(credential_name, None)
+
+    log.warning(
+        f"[ANTIGRAVITY QUOTA] 供应商级配额保护触发: credential={credential_name}, "
+        f"vendor={vendor}, triggered_by={triggered_model}, "
+        f"remaining={triggered_remaining:.4f}, threshold={threshold:.4f}, "
+        f"cooled_models={len(cooldown_targets)}, "
+        f"cooldown_until={datetime.fromtimestamp(cooldown_until, timezone.utc).isoformat()}"
+    )
+    return False
 
 
 # ==================== 新的流式和非流式请求函数 ====================
@@ -166,6 +326,19 @@ async def stream_request(
     for attempt in range(max_retries + 1):
         success_recorded = False  # 标记是否已记录成功
         need_retry = False  # 标记是否需要重试
+
+        # 配额阈值保护检查
+        _quota_failed: set = set()
+        while not await _check_and_apply_quota_threshold(current_file, access_token, model_name):
+            _quota_failed.add(current_file)
+            if not await refresh_credential_fast() or current_file in _quota_failed:
+                log.error("[ANTIGRAVITY STREAM] 配额阈值保护后无可用凭证")
+                yield Response(
+                    content=json.dumps({"error": "模型额度不足，当前无可用凭证"}),
+                    status_code=429,
+                    media_type="application/json"
+                )
+                return
 
         try:
             async for chunk in stream_post_async(
@@ -440,7 +613,19 @@ async def non_stream_request(
 
     for attempt in range(max_retries + 1):
         need_retry = False  # 标记是否需要重试
-        
+
+        # 配额阈值保护检查
+        _quota_failed: set = set()
+        while not await _check_and_apply_quota_threshold(current_file, access_token, model_name):
+            _quota_failed.add(current_file)
+            if not await refresh_credential_fast() or current_file in _quota_failed:
+                log.error("[ANTIGRAVITY] 配额阈值保护后无可用凭证")
+                return Response(
+                    content=json.dumps({"error": "模型额度不足，当前无可用凭证"}),
+                    status_code=429,
+                    media_type="application/json"
+                )
+
         try:
             response = await post_async(
                 url=target_url,

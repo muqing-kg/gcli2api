@@ -2433,6 +2433,50 @@ async function deduplicateAntigravityByEmail() {
 }
 
 // =====================================================================
+// 配额保护弹窗
+// =====================================================================
+async function showQuotaThresholdDialog() {
+    try {
+        const resp = await fetch('./config/get', { headers: getAuthHeaders() });
+        if (resp.ok) {
+            const data = await resp.json();
+            const fraction = parseFloat(data.config?.antigravity_quota_threshold ?? 0);
+            document.getElementById('quotaThresholdInput').value = Math.round(fraction * 100);
+        }
+    } catch (e) { /* ignore, use default */ }
+    document.getElementById('quotaThresholdModal').style.display = 'block';
+}
+
+function closeQuotaThresholdDialog() {
+    document.getElementById('quotaThresholdModal').style.display = 'none';
+}
+
+async function saveQuotaThreshold() {
+    const pct = parseFloat(document.getElementById('quotaThresholdInput').value) || 0;
+    if (pct < 0 || pct > 100) {
+        showStatus('阈值必须在 0-100% 之间', 'error');
+        return;
+    }
+    const fraction = pct / 100;
+    try {
+        const resp = await fetch('./config/save', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ config: { antigravity_quota_threshold: fraction } })
+        });
+        if (resp.ok) {
+            showStatus(`配额保护阈值已设为 ${pct}%${pct === 0 ? '（已禁用）' : ''}`, 'success');
+            closeQuotaThresholdDialog();
+        } else {
+            const data = await resp.json();
+            showStatus(data.detail || '保存失败', 'error');
+        }
+    } catch (e) {
+        showStatus(`保存失败: ${e.message}`, 'error');
+    }
+}
+
+// =====================================================================
 // WebSocket日志相关
 // =====================================================================
 function connectWebSocket() {
