@@ -1,4 +1,4 @@
-full_hash=06f97e5a7b1876eb69dd01fd9cbf02d620344393
-short_hash=06f97e5
-message=refactor: 移除_silent_refresh_tier中多余的邮箱检查
-date=2026-02-12 10:02:03 +0800
+full_hash=59a8a5ab4e0663b1c47030660c5a7483b0afe56b
+short_hash=59a8a5a
+message=feat: antigravity 供应商级配额阈值保护
+date=2026-02-15 13:11:30 +0800
