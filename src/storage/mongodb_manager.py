@@ -68,9 +68,6 @@ class MongoDBManager:
             # 创建索引
             await self._create_indexes()
 
-            # 为旧凭证添加 preview 字段默认值
-            await self._ensure_preview_field()
-
             # 加载配置到内存
             await self._load_config_cache()
 
@@ -82,45 +79,124 @@ class MongoDBManager:
             raise
 
     async def _create_indexes(self):
-        """创建索引"""
+        """
+        创建索引 - 支持安全迁移
+        
+        迁移策略：
+        1. 先创建新索引
+        2. 再删除旧索引（如果存在）
+        3. 通过环境变量 MONGODB_CLEAN_OLD_INDEXES 控制是否清理（默认True）
+        """
+        from pymongo import IndexModel, ASCENDING
+
         credentials_collection = self._db["credentials"]
         antigravity_credentials_collection = self._db["antigravity_credentials"]
 
-        # 创建普通凭证索引
-        await credentials_collection.create_index("filename", unique=True)
-        await credentials_collection.create_index("disabled")
-        await credentials_collection.create_index("rotation_order")
+        # ===== Geminicli 凭证索引 =====
+        geminicli_indexes = [
+            # 唯一索引 - 用于所有按文件名的精确查询
+            IndexModel([("filename", ASCENDING)], unique=True, name="idx_filename_unique"),
+            
+            # 复合索引1 - 用于 get_next_available_credential
+            # 查询模式: {disabled: False} + 可选 {preview: True/False} + $sample
+            IndexModel(
+                [("disabled", ASCENDING), ("preview", ASCENDING)],
+                name="idx_disabled_preview"
+            ),
+            
+            # 复合索引2 - 用于 get_available_credentials_list
+            # 查询模式: {disabled: False} + sort by rotation_order
+            IndexModel(
+                [("disabled", ASCENDING), ("rotation_order", ASCENDING)],
+                name="idx_disabled_rotation"
+            ),
+            
+            # 单字段索引 - 用于 get_credentials_summary 的错误筛选
+            IndexModel([("error_codes", ASCENDING)], name="idx_error_codes"),
+            
+            # 单字段索引 - 用于 get_duplicate_credentials_by_email 的去重查询
+            IndexModel([("user_email", ASCENDING)], name="idx_user_email"),
+        ]
 
-        # 复合索引
-        await credentials_collection.create_index([("disabled", 1), ("rotation_order", 1)])
+        # ===== Antigravity 凭证索引 =====
+        antigravity_indexes = [
+            # 唯一索引
+            IndexModel([("filename", ASCENDING)], unique=True, name="idx_filename_unique"),
+            
+            # 复合索引 - antigravity 不需要 preview 字段，一个复合索引即可覆盖主要场景
+            # 查询模式: {disabled: False} + 可选 sort by rotation_order
+            IndexModel(
+                [("disabled", ASCENDING), ("rotation_order", ASCENDING)],
+                name="idx_disabled_rotation"
+            ),
+            
+            # 单字段索引 - 错误筛选
+            IndexModel([("error_codes", ASCENDING)], name="idx_error_codes"),
+            
+            # 单字段索引 - 去重查询
+            IndexModel([("user_email", ASCENDING)], name="idx_user_email"),
+        ]
 
-        # 如果经常按错误码筛选，可以添加此索引
-        await credentials_collection.create_index("error_codes")
-
-        # 创建 Antigravity 凭证索引
-        await antigravity_credentials_collection.create_index("filename", unique=True)
-        await antigravity_credentials_collection.create_index("disabled")
-        await antigravity_credentials_collection.create_index("rotation_order")
-
-        # 复合索引
-        await antigravity_credentials_collection.create_index([("disabled", 1), ("rotation_order", 1)])
-
-        # 如果经常按错误码筛选，可以添加此索引
-        await antigravity_credentials_collection.create_index("error_codes")
-
-        log.debug("MongoDB indexes created")
-
-    async def _ensure_preview_field(self):
-        """为所有没有 preview 字段的 geminicli 凭证添加默认值 True"""
+        # 第一步：并行创建新索引
         try:
-            result = await self._db["credentials"].update_many(
-                {"preview": {"$exists": False}},
-                {"$set": {"preview": True}}
-            )
-            if result.modified_count > 0:
-                log.info(f"已为 {result.modified_count} 个旧凭证添加 preview=True")
+            await credentials_collection.create_indexes(geminicli_indexes)
+            await antigravity_credentials_collection.create_indexes(antigravity_indexes)
+            log.debug("MongoDB indexes created successfully")
         except Exception as e:
-            log.error(f"Error ensuring preview field: {e}")
+            # 如果索引已存在，忽略错误
+            if "already exists" not in str(e).lower():
+                log.warning(f"Index creation warning: {e}")
+
+        # 第二步：清理旧索引（可通过环境变量禁用）
+        clean_old_indexes = os.getenv("MONGODB_CLEAN_OLD_INDEXES", "true").lower() == "true"
+        if clean_old_indexes:
+            await self._clean_old_indexes(credentials_collection, antigravity_credentials_collection)
+
+    async def _clean_old_indexes(self, credentials_collection, antigravity_credentials_collection):
+        """
+        清理旧版本的冗余索引
+        
+        旧索引列表：
+        - disabled_1 (单字段，已被复合索引覆盖)
+        - rotation_order_1 (单字段，已被复合索引覆盖)
+        - idx_available_credentials (旧复合索引，字段组合已优化)
+        """
+        # 定义需要清理的旧索引
+        old_indexes_to_remove = [
+            "disabled_1",              # 单字段 disabled 索引
+            "rotation_order_1",         # 单字段 rotation_order 索引
+            "idx_available_credentials", # 旧的复合索引 (disabled, preview, rotation_order)
+        ]
+
+        # 清理 credentials 集合的旧索引
+        try:
+            existing_indexes = await credentials_collection.list_indexes().to_list(None)
+            existing_index_names = {idx["name"] for idx in existing_indexes}
+            
+            for old_index in old_indexes_to_remove:
+                if old_index in existing_index_names:
+                    try:
+                        await credentials_collection.drop_index(old_index)
+                        log.info(f"Dropped old index from credentials: {old_index}")
+                    except Exception as e:
+                        log.warning(f"Failed to drop old index {old_index}: {e}")
+        except Exception as e:
+            log.warning(f"Error cleaning old indexes from credentials collection: {e}")
+
+        # 清理 antigravity_credentials 集合的旧索引
+        try:
+            existing_indexes = await antigravity_credentials_collection.list_indexes().to_list(None)
+            existing_index_names = {idx["name"] for idx in existing_indexes}
+            
+            for old_index in old_indexes_to_remove:
+                if old_index in existing_index_names:
+                    try:
+                        await antigravity_credentials_collection.drop_index(old_index)
+                        log.info(f"Dropped old index from antigravity_credentials: {old_index}")
+                    except Exception as e:
+                        log.warning(f"Failed to drop old index {old_index}: {e}")
+        except Exception as e:
+            log.warning(f"Error cleaning old indexes from antigravity_credentials collection: {e}")
 
     async def _load_config_cache(self):
         """加载配置到内存缓存（仅在初始化时调用一次）"""
