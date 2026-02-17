@@ -418,6 +418,7 @@ async def stream_request(
                         await record_api_call_success(
                             credential_manager, current_file, mode="antigravity", model_name=model_name
                         )
+                        _quota_cache.pop(current_file, None)
                         success_recorded = True
                         log.debug(f"[ANTIGRAVITY STREAM] 开始接收流式响应，模型: {model_name}")
 
@@ -663,6 +664,7 @@ async def non_stream_request(
                     await record_api_call_success(
                         credential_manager, current_file, mode="antigravity", model_name=model_name
                     )
+                    _quota_cache.pop(current_file, None)
                     return Response(
                         content=response.content,
                         status_code=200,
@@ -698,7 +700,7 @@ async def non_stream_request(
 
                     # 记录错误
                     cooldown_until = None
-                    if status_code == 429 or status_code == 503 and error_text:
+                    if (status_code == 429 or status_code == 503) and error_text:
                         # 使用已缓存的error_text解析冷却时间
                         try:
                             cooldown_until = await parse_and_log_cooldown(error_text, mode="antigravity")
