@@ -347,13 +347,16 @@ async def normalize_gemini_request(
                     model = "claude-opus-4-5-thinking"
                 else:
                     model = "claude-opus-4-6-thinking"
-            elif "sonnet" in model.lower() or "haiku" in model.lower():
-                model = "claude-sonnet-4-5-thinking"
+            elif "sonnet" in model.lower():
+                if "4-5" in model:
+                    model = "claude-sonnet-4-5-thinking"
+                else:
+                    model = "claude-sonnet-4-6-thinking"
             elif "haiku" in model.lower():
                 model = "gemini-2.5-flash"
             elif "claude" in model.lower():
                 # Claude 模型兜底：如果包含 claude 但不是 opus/sonnet/haiku
-                model = "claude-sonnet-4-5-thinking"
+                model = "claude-sonnet-4-6-thinking"
             
             result["model"] = model
             if original_model != model:

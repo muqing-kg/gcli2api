@@ -1,4 +1,4 @@
-full_hash=8306b1209cb46429bdfe2f52a935335c84ffed3c
-short_hash=8306b12
-message=feat: 冷却显示按供应商分组，区分配额保护与配额耗尽
-date=2026-02-18 09:33:51 +0800
+full_hash=943af69dfe3fb5b55092c95cf810f9b50283a7db
+short_hash=943af69
+message=Update gemini_fix.py
+date=2026-02-18 10:37:25 +0800
