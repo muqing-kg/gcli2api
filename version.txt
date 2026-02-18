@@ -1,4 +1,4 @@
-full_hash=92c065cb39dd3ea2a1ef5db890a9c295631f0dbb
-short_hash=92c065c
-message=log
-date=2026-02-18 00:36:24 +0800
+full_hash=8306b1209cb46429bdfe2f52a935335c84ffed3c
+short_hash=8306b12
+message=feat: 冷却显示按供应商分组，区分配额保护与配额耗尽
+date=2026-02-18 09:33:51 +0800
