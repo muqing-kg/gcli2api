@@ -22,6 +22,7 @@ class MongoDBManager:
         "last_success",
         "user_email",
         "model_cooldowns",
+        "cooldown_reasons",
         "preview",
     }
 
@@ -497,6 +498,7 @@ class MongoDBManager:
                         "last_success": current_ts,
                         "user_email": None,
                         "model_cooldowns": {},
+                        "cooldown_reasons": {},
                         "rotation_order": next_order,
                         "call_count": 0,
                         "created_at": current_ts,
@@ -734,12 +736,16 @@ class MongoDBManager:
 
             if doc:
                 model_cooldowns = doc.get("model_cooldowns", {})
+                cooldown_reasons = doc.get("cooldown_reasons", {})
                 # 过滤掉损坏的数据(dict类型)和过期的冷却
                 if model_cooldowns:
-                    model_cooldowns = {
-                        k: v for k, v in model_cooldowns.items()
-                        if isinstance(v, (int, float)) and v > current_time
-                    }
+                    expired_keys = [
+                        k for k, v in model_cooldowns.items()
+                        if not isinstance(v, (int, float)) or v <= current_time
+                    ]
+                    model_cooldowns = {k: v for k, v in model_cooldowns.items() if k not in expired_keys}
+                    for k in expired_keys:
+                        cooldown_reasons.pop(k, None)
 
                 state = {
                     "disabled": doc.get("disabled", False),
@@ -747,6 +753,7 @@ class MongoDBManager:
                     "last_success": doc.get("last_success", current_time),
                     "user_email": doc.get("user_email"),
                     "model_cooldowns": model_cooldowns,
+                    "cooldown_reasons": cooldown_reasons,
                 }
                 # preview状态只对geminicli模式有效
                 if mode == "geminicli":
@@ -760,6 +767,7 @@ class MongoDBManager:
                 "last_success": current_time,
                 "user_email": None,
                 "model_cooldowns": {},
+                "cooldown_reasons": {},
             }
             # preview状态只对geminicli模式有效
             if mode == "geminicli":
@@ -786,6 +794,7 @@ class MongoDBManager:
                 "last_success": 1,
                 "user_email": 1,
                 "model_cooldowns": 1,
+                "cooldown_reasons": 1,
                 "_id": 0
             }
             # preview状态只对geminicli模式有效
@@ -800,13 +809,17 @@ class MongoDBManager:
             async for doc in cursor:
                 filename = doc["filename"]
                 model_cooldowns = doc.get("model_cooldowns", {})
+                cooldown_reasons = doc.get("cooldown_reasons", {})
 
                 # 自动过滤掉已过期的模型CD
                 if model_cooldowns:
-                    model_cooldowns = {
-                        k: v for k, v in model_cooldowns.items()
-                        if isinstance(v, (int, float)) and v > current_time
-                    }
+                    expired_keys = [
+                        k for k, v in model_cooldowns.items()
+                        if not isinstance(v, (int, float)) or v <= current_time
+                    ]
+                    model_cooldowns = {k: v for k, v in model_cooldowns.items() if k not in expired_keys}
+                    for k in expired_keys:
+                        cooldown_reasons.pop(k, None)
 
                 state = {
                     "disabled": doc.get("disabled", False),
@@ -814,6 +827,7 @@ class MongoDBManager:
                     "last_success": doc.get("last_success", time.time()),
                     "user_email": doc.get("user_email"),
                     "model_cooldowns": model_cooldowns,
+                    "cooldown_reasons": cooldown_reasons,
                 }
                 # preview状态只对geminicli模式有效
                 if mode == "geminicli":
@@ -905,6 +919,7 @@ class MongoDBManager:
                 "user_email": 1,
                 "rotation_order": 1,
                 "model_cooldowns": 1,
+                "cooldown_reasons": 1,
                 "subscription_tier": 1,
                 "_id": 0
             }
@@ -919,14 +934,17 @@ class MongoDBManager:
 
             async for doc in cursor:
                 model_cooldowns = doc.get("model_cooldowns", {})
+                cooldown_reasons = doc.get("cooldown_reasons", {})
 
                 # 自动过滤掉已过期的模型CD
                 active_cooldowns = {}
+                active_reasons = {}
                 if model_cooldowns:
-                    active_cooldowns = {
-                        k: v for k, v in model_cooldowns.items()
-                        if isinstance(v, (int, float)) and v > current_time
-                    }
+                    for k, v in model_cooldowns.items():
+                        if isinstance(v, (int, float)) and v > current_time:
+                            active_cooldowns[k] = v
+                            if k in cooldown_reasons:
+                                active_reasons[k] = cooldown_reasons[k]
 
                 summary = {
                     "filename": doc["filename"],
@@ -936,6 +954,7 @@ class MongoDBManager:
                     "user_email": doc.get("user_email"),
                     "rotation_order": doc.get("rotation_order", 0),
                     "model_cooldowns": active_cooldowns,
+                    "cooldown_reasons": active_reasons,
                     "subscription_tier": doc.get("subscription_tier"),
                 }
                 # preview状态只对geminicli模式有效
@@ -1099,6 +1118,7 @@ class MongoDBManager:
         filename: str,
         model_name: str,
         cooldown_until: Optional[float],
+        reason: str = "exhausted",
         mode: str = "geminicli"
     ) -> bool:
         """
@@ -1108,6 +1128,7 @@ class MongoDBManager:
             filename: 凭证文件名
             model_name: 模型名（完整模型名，如 "gemini-2.0-flash-exp"）
             cooldown_until: 冷却截止时间戳（None 表示清除冷却）
+            reason: 冷却原因 ("exhausted" 或 "protection")
             mode: 凭证模式 ("geminicli" 或 "antigravity")
 
         Returns:
@@ -1131,7 +1152,10 @@ class MongoDBManager:
                 result = await collection.update_one(
                     {"filename": filename},
                     {
-                        "$unset": {f"model_cooldowns.{escaped_model_name}": ""},
+                        "$unset": {
+                            f"model_cooldowns.{escaped_model_name}": "",
+                            f"cooldown_reasons.{escaped_model_name}": "",
+                        },
                         "$set": {"updated_at": time.time()}
                     }
                 )
@@ -1142,6 +1166,7 @@ class MongoDBManager:
                     {
                         "$set": {
                             f"model_cooldowns.{escaped_model_name}": cooldown_until,
+                            f"cooldown_reasons.{escaped_model_name}": reason,
                             "updated_at": time.time()
                         }
                     }
@@ -1151,7 +1176,7 @@ class MongoDBManager:
                 log.warning(f"Credential {filename} not found")
                 return False
 
-            log.debug(f"Set model cooldown: {filename}, model_name={model_name}, cooldown_until={cooldown_until}")
+            log.debug(f"Set model cooldown: {filename}, model_name={model_name}, cooldown_until={cooldown_until}, reason={reason}")
             return True
 
         except Exception as e:

@@ -24,6 +24,7 @@ class SQLiteManager:
         "last_success",
         "user_email",
         "model_cooldowns",
+        "cooldown_reasons",
         "subscription_tier",
         "preview",
     }
@@ -37,6 +38,7 @@ class SQLiteManager:
             ("last_success", "REAL"),
             ("user_email", "TEXT"),
             ("model_cooldowns", "TEXT DEFAULT '{}'"),
+            ("cooldown_reasons", "TEXT DEFAULT '{}'"),
             ("preview", "INTEGER DEFAULT 1"),
             ("rotation_order", "INTEGER DEFAULT 0"),
             ("call_count", "INTEGER DEFAULT 0"),
@@ -51,6 +53,7 @@ class SQLiteManager:
             ("last_success", "REAL"),
             ("user_email", "TEXT"),
             ("model_cooldowns", "TEXT DEFAULT '{}'"),
+            ("cooldown_reasons", "TEXT DEFAULT '{}'"),
             ("rotation_order", "INTEGER DEFAULT 0"),
             ("call_count", "INTEGER DEFAULT 0"),
             ("created_at", "REAL DEFAULT (unixepoch())"),
@@ -169,6 +172,7 @@ class SQLiteManager:
 
                 -- 模型级 CD 支持 (JSON: {model_name: cooldown_timestamp})
                 model_cooldowns TEXT DEFAULT '{}',
+                cooldown_reasons TEXT DEFAULT '{}',
 
                 -- preview 状态 (只对 geminicli 有效，默认为 true)
                 preview INTEGER DEFAULT 1,
@@ -199,6 +203,7 @@ class SQLiteManager:
 
                 -- 模型级 CD 支持 (JSON: {model_name: cooldown_timestamp})
                 model_cooldowns TEXT DEFAULT '{}',
+                cooldown_reasons TEXT DEFAULT '{}',
 
                 -- 轮换相关
                 rotation_order INTEGER DEFAULT 0,
@@ -656,7 +661,7 @@ class SQLiteManager:
 
             for key, value in state_updates.items():
                 if key in self.STATE_FIELDS:
-                    if key in ("error_codes", "error_messages", "model_cooldowns"):
+                    if key in ("error_codes", "error_messages", "model_cooldowns", "cooldown_reasons"):
                         # JSON 字段需要序列化
                         set_clauses.append(f"{key} = ?")
                         values.append(json.dumps(value))
@@ -713,7 +718,7 @@ class SQLiteManager:
                 # 精确匹配
                 if mode == "geminicli":
                     async with db.execute(f"""
-                        SELECT disabled, error_codes, last_success, user_email, model_cooldowns, preview
+                        SELECT disabled, error_codes, last_success, user_email, model_cooldowns, preview, cooldown_reasons
                         FROM {table_name} WHERE filename = ?
                     """, (filename,)) as cursor:
                         row = await cursor.fetchone()
@@ -721,6 +726,7 @@ class SQLiteManager:
                         if row:
                             error_codes_json = row[1] or '[]'
                             model_cooldowns_json = row[4] or '{}'
+                            cooldown_reasons_json = row[6] or '{}'
                             return {
                                 "disabled": bool(row[0]),
                                 "error_codes": json.loads(error_codes_json),
@@ -728,6 +734,7 @@ class SQLiteManager:
                                 "user_email": row[3],
                                 "model_cooldowns": json.loads(model_cooldowns_json),
                                 "preview": bool(row[5]) if row[5] is not None else True,
+                                "cooldown_reasons": json.loads(cooldown_reasons_json),
                             }
 
                     # 返回默认状态
@@ -738,11 +745,12 @@ class SQLiteManager:
                         "user_email": None,
                         "model_cooldowns": {},
                         "preview": True,
+                        "cooldown_reasons": {},
                     }
                 else:
                     # antigravity 模式
                     async with db.execute(f"""
-                        SELECT disabled, error_codes, last_success, user_email, model_cooldowns
+                        SELECT disabled, error_codes, last_success, user_email, model_cooldowns, cooldown_reasons
                         FROM {table_name} WHERE filename = ?
                     """, (filename,)) as cursor:
                         row = await cursor.fetchone()
@@ -750,12 +758,14 @@ class SQLiteManager:
                         if row:
                             error_codes_json = row[1] or '[]'
                             model_cooldowns_json = row[4] or '{}'
+                            cooldown_reasons_json = row[5] or '{}'
                             return {
                                 "disabled": bool(row[0]),
                                 "error_codes": json.loads(error_codes_json),
                                 "last_success": row[2] or time.time(),
                                 "user_email": row[3],
                                 "model_cooldowns": json.loads(model_cooldowns_json),
+                                "cooldown_reasons": json.loads(cooldown_reasons_json),
                             }
 
                     # 返回默认状态
@@ -765,6 +775,7 @@ class SQLiteManager:
                         "last_success": time.time(),
                         "user_email": None,
                         "model_cooldowns": {},
+                        "cooldown_reasons": {},
                     }
 
         except Exception as e:
@@ -781,7 +792,7 @@ class SQLiteManager:
                 if mode == "geminicli":
                     async with db.execute(f"""
                         SELECT filename, disabled, error_codes, last_success,
-                               user_email, model_cooldowns, preview
+                               user_email, model_cooldowns, preview, cooldown_reasons
                         FROM {table_name}
                     """) as cursor:
                         rows = await cursor.fetchall()
@@ -794,13 +805,15 @@ class SQLiteManager:
                             error_codes_json = row[2] or '[]'
                             model_cooldowns_json = row[5] or '{}'
                             model_cooldowns = json.loads(model_cooldowns_json)
+                            cooldown_reasons_json = row[7] or '{}'
+                            cooldown_reasons = json.loads(cooldown_reasons_json)
 
                             # 自动过滤掉已过期的模型CD
                             if model_cooldowns:
-                                model_cooldowns = {
-                                    k: v for k, v in model_cooldowns.items()
-                                    if v > current_time
-                                }
+                                expired_keys = [k for k, v in model_cooldowns.items() if v <= current_time]
+                                for k in expired_keys:
+                                    del model_cooldowns[k]
+                                    cooldown_reasons.pop(k, None)
 
                             states[filename] = {
                                 "disabled": bool(row[1]),
@@ -809,6 +822,7 @@ class SQLiteManager:
                                 "user_email": row[4],
                                 "model_cooldowns": model_cooldowns,
                                 "preview": bool(row[6]) if row[6] is not None else True,
+                                "cooldown_reasons": cooldown_reasons,
                             }
 
                         return states
@@ -816,7 +830,7 @@ class SQLiteManager:
                     # antigravity 模式
                     async with db.execute(f"""
                         SELECT filename, disabled, error_codes, last_success,
-                               user_email, model_cooldowns
+                               user_email, model_cooldowns, cooldown_reasons
                         FROM {table_name}
                     """) as cursor:
                         rows = await cursor.fetchall()
@@ -829,13 +843,15 @@ class SQLiteManager:
                             error_codes_json = row[2] or '[]'
                             model_cooldowns_json = row[5] or '{}'
                             model_cooldowns = json.loads(model_cooldowns_json)
+                            cooldown_reasons_json = row[6] or '{}'
+                            cooldown_reasons = json.loads(cooldown_reasons_json)
 
                             # 自动过滤掉已过期的模型CD
                             if model_cooldowns:
-                                model_cooldowns = {
-                                    k: v for k, v in model_cooldowns.items()
-                                    if v > current_time
-                                }
+                                expired_keys = [k for k, v in model_cooldowns.items() if v <= current_time]
+                                for k in expired_keys:
+                                    del model_cooldowns[k]
+                                    cooldown_reasons.pop(k, None)
 
                             states[filename] = {
                                 "disabled": bool(row[1]),
@@ -843,6 +859,7 @@ class SQLiteManager:
                                 "last_success": row[3] or time.time(),
                                 "user_email": row[4],
                                 "model_cooldowns": model_cooldowns,
+                                "cooldown_reasons": cooldown_reasons,
                             }
 
                         return states
@@ -924,7 +941,7 @@ class SQLiteManager:
                 if mode == "geminicli":
                     all_query = f"""
                         SELECT filename, disabled, error_codes, last_success,
-                               user_email, rotation_order, model_cooldowns, subscription_tier, preview
+                               user_email, rotation_order, model_cooldowns, subscription_tier, preview, cooldown_reasons
                         FROM {table_name}
                         {where_clause}
                         ORDER BY
@@ -939,7 +956,7 @@ class SQLiteManager:
                 else:
                     all_query = f"""
                         SELECT filename, disabled, error_codes, last_success,
-                               user_email, rotation_order, model_cooldowns, subscription_tier
+                               user_email, rotation_order, model_cooldowns, subscription_tier, cooldown_reasons
                         FROM {table_name}
                         {where_clause}
                         ORDER BY
@@ -965,13 +982,21 @@ class SQLiteManager:
                         subscription_tier = row[7]
                         model_cooldowns = json.loads(model_cooldowns_json)
 
+                        if mode == "geminicli":
+                            cooldown_reasons_json = row[9] or '{}'
+                        else:
+                            cooldown_reasons_json = row[8] or '{}'
+                        cooldown_reasons = json.loads(cooldown_reasons_json)
+
                         # 自动过滤掉已过期的模型CD
                         active_cooldowns = {}
+                        active_reasons = {}
                         if model_cooldowns:
-                            active_cooldowns = {
-                                k: v for k, v in model_cooldowns.items()
-                                if v > current_time
-                            }
+                            for k, v in model_cooldowns.items():
+                                if v > current_time:
+                                    active_cooldowns[k] = v
+                                    if k in cooldown_reasons:
+                                        active_reasons[k] = cooldown_reasons[k]
 
                         error_codes = json.loads(error_codes_json)
                         if filter_value:
@@ -998,6 +1023,7 @@ class SQLiteManager:
                             "user_email": row[4],
                             "rotation_order": row[5],
                             "model_cooldowns": active_cooldowns,
+                            "cooldown_reasons": active_reasons,
                             "subscription_tier": subscription_tier,
                         }
 
@@ -1244,6 +1270,7 @@ class SQLiteManager:
         filename: str,
         model_name: str,
         cooldown_until: Optional[float],
+        reason: str = "exhausted",
         mode: str = "geminicli"
     ) -> bool:
         """
@@ -1253,6 +1280,7 @@ class SQLiteManager:
             filename: 凭证文件名
             model_name: 模型名（完整模型名，如 "gemini-2.0-flash-exp"）
             cooldown_until: 冷却截止时间戳（None 表示清除冷却）
+            reason: 冷却原因 ("exhausted" = 429额度耗尽, "protection" = 配额保护)
             mode: 凭证模式 ("geminicli" 或 "antigravity")
 
         Returns:
@@ -1266,9 +1294,8 @@ class SQLiteManager:
         try:
             table_name = self._get_table_name(mode)
             async with aiosqlite.connect(self._db_path) as db:
-                # 获取当前的 model_cooldowns
                 async with db.execute(f"""
-                    SELECT model_cooldowns FROM {table_name} WHERE filename = ?
+                    SELECT model_cooldowns, cooldown_reasons FROM {table_name} WHERE filename = ?
                 """, (filename,)) as cursor:
                     row = await cursor.fetchone()
 
@@ -1277,23 +1304,25 @@ class SQLiteManager:
                         return False
 
                     model_cooldowns = json.loads(row[0] or '{}')
+                    cooldown_reasons = json.loads(row[1] or '{}')
 
-                    # 更新或删除指定模型的冷却时间
                     if cooldown_until is None:
                         model_cooldowns.pop(model_name, None)
+                        cooldown_reasons.pop(model_name, None)
                     else:
                         model_cooldowns[model_name] = cooldown_until
+                        cooldown_reasons[model_name] = reason
 
-                    # 写回数据库
                     await db.execute(f"""
                         UPDATE {table_name}
                         SET model_cooldowns = ?,
+                            cooldown_reasons = ?,
                             updated_at = unixepoch()
                         WHERE filename = ?
-                    """, (json.dumps(model_cooldowns), filename))
+                    """, (json.dumps(model_cooldowns), json.dumps(cooldown_reasons), filename))
                     await db.commit()
 
-                    log.debug(f"Set model cooldown: {filename}, model_name={model_name}, cooldown_until={cooldown_until}")
+                    log.debug(f"Set model cooldown: {filename}, model_name={model_name}, cooldown_until={cooldown_until}, reason={reason}")
                     return True
 
         except Exception as e:

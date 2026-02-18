@@ -124,6 +124,7 @@ function createCredsManager(type) {
                             user_email: item.user_email,
                             subscription_tier: item.subscription_tier,
                             model_cooldowns: item.model_cooldowns || {},
+                            cooldown_reasons: item.cooldown_reasons || {},
                             preview: item.preview  // 保存preview字段
                         };
                     });
@@ -610,6 +611,13 @@ function formatCooldownTime(remainingSeconds) {
     return `${seconds}s`;
 }
 
+function getModelVendor(modelName) {
+    const name = modelName.toLowerCase().replace(/^models\//, '');
+    if (name.startsWith('claude')) return 'claude';
+    if (name.startsWith('gemini')) return 'gemini';
+    return name.includes('-') ? name.split('-')[0] : name;
+}
+
 // =====================================================================
 // 凭证卡片创建（通用）
 // =====================================================================
@@ -646,30 +654,37 @@ function createCredCard(credInfo, manager) {
         }
     }
 
-    // 模型级冷却状态
+    // 模型级冷却状态 - 按供应商分组
     if (credInfo.model_cooldowns && Object.keys(credInfo.model_cooldowns).length > 0) {
         const currentTime = Date.now() / 1000;
+        const reasons = credInfo.cooldown_reasons || {};
         const activeCooldowns = Object.entries(credInfo.model_cooldowns)
-            .filter(([, until]) => until > currentTime)
-            .map(([model, until]) => {
-                const remaining = Math.max(0, Math.floor(until - currentTime));
-                const shortModel = model.replace('gemini-', '').replace('-exp', '')
-                    .replace('2.0-', '2-').replace('1.5-', '1.5-');
-                return {
-                    model: shortModel,
-                    time: formatCooldownTime(remaining).replace(/s$/, '').replace(/ /g, ''),
-                    fullModel: model
-                };
-            });
+            .filter(([, until]) => until > currentTime);
 
         if (activeCooldowns.length > 0) {
-            activeCooldowns.slice(0, 2).forEach(item => {
-                statusBadges += `<span class="cooldown-badge" style="background-color: #17a2b8;" title="模型: ${item.fullModel}">🔧 ${item.model}: ${item.time}</span>`;
-            });
-            if (activeCooldowns.length > 2) {
-                const remaining = activeCooldowns.length - 2;
-                const remainingModels = activeCooldowns.slice(2).map(i => `${i.fullModel}: ${i.time}`).join('\n');
-                statusBadges += `<span class="cooldown-badge" style="background-color: #17a2b8;" title="其他模型:\n${remainingModels}">+${remaining}</span>`;
+            // 按供应商分组
+            const vendorGroups = {};
+            for (const [model, until] of activeCooldowns) {
+                const vendor = getModelVendor(model);
+                if (!vendorGroups[vendor]) vendorGroups[vendor] = { maxUntil: 0, reason: null, count: 0 };
+                const g = vendorGroups[vendor];
+                g.count++;
+                if (until > g.maxUntil) g.maxUntil = until;
+                // protection 优先级低于 exhausted
+                const r = reasons[model] || 'exhausted';
+                if (!g.reason || r === 'exhausted') g.reason = r;
+            }
+
+            for (const [vendor, g] of Object.entries(vendorGroups)) {
+                const remaining = Math.max(0, Math.floor(g.maxUntil - currentTime));
+                const timeStr = formatCooldownTime(remaining).replace(/s$/, '').replace(/ /g, '');
+                const isProtection = g.reason === 'protection';
+                const icon = isProtection ? '🛡️' : '🚫';
+                const color = isProtection ? '#e67e22' : '#e74c3c';
+                const label = vendor.charAt(0).toUpperCase() + vendor.slice(1);
+                const hint = isProtection ? '配额保护' : '配额耗尽';
+                const models = activeCooldowns.filter(([m]) => getModelVendor(m) === vendor).map(([m]) => m).join(', ');
+                statusBadges += `<span class="cooldown-badge" style="background-color: ${color};" title="${hint} (${g.count}模型)\n${models}" data-vendor="${vendor}" data-until="${g.maxUntil}" data-reason="${g.reason}">${icon} ${label}: ${timeStr}</span>`;
             }
         }
     }
@@ -1894,6 +1909,7 @@ async function toggleAntigravityQuotaDetails(pathId) {
                     const credData = AppState.antigravityCreds.data[filename];
                     if (credData) {
                         credData.model_cooldowns = {};
+                        credData.cooldown_reasons = {};
                     }
                     // 2. 移除当前卡片的冷却徽章
                     const quotaPanel = document.getElementById('quota-' + pathId);
@@ -3054,49 +3070,43 @@ function stopCooldownTimer() {
 function updateCooldownDisplays() {
     let needsRefresh = false;
 
-    // 检查模型级冷却是否过期
-    for (const credInfo of Object.values(AppState.creds.data)) {
-        if (credInfo.model_cooldowns && Object.keys(credInfo.model_cooldowns).length > 0) {
-            const currentTime = Date.now() / 1000;
-            const hasExpiredCooldowns = Object.entries(credInfo.model_cooldowns).some(([, until]) => until <= currentTime);
+    // 检查所有凭证管理器的冷却是否过期
+    const allManagers = [AppState.creds];
+    if (AppState.antigravityCreds) allManagers.push(AppState.antigravityCreds);
 
-            if (hasExpiredCooldowns) {
-                needsRefresh = true;
-                break;
+    for (const mgr of allManagers) {
+        for (const credInfo of Object.values(mgr.data)) {
+            if (credInfo.model_cooldowns && Object.keys(credInfo.model_cooldowns).length > 0) {
+                const currentTime = Date.now() / 1000;
+                if (Object.values(credInfo.model_cooldowns).some(until => until <= currentTime)) {
+                    needsRefresh = true;
+                    break;
+                }
             }
         }
+        if (needsRefresh) break;
     }
 
     if (needsRefresh) {
         AppState.creds.renderList();
+        if (AppState.antigravityCreds) AppState.antigravityCreds.renderList();
         return;
     }
 
-    // 更新模型级冷却的显示
+    // 实时更新冷却徽章倒计时
     document.querySelectorAll('.cooldown-badge').forEach(badge => {
-        const card = badge.closest('.cred-card');
-        const filenameEl = card?.querySelector('.cred-filename');
-        if (!filenameEl) return;
+        const until = parseFloat(badge.dataset.until);
+        const reason = badge.dataset.reason;
+        const vendor = badge.dataset.vendor;
+        if (!until || !vendor) return;
 
-        const filename = filenameEl.textContent;
-        const credInfo = Object.values(AppState.creds.data).find(c => c.filename === filename);
-
-        if (credInfo && credInfo.model_cooldowns) {
-            const currentTime = Date.now() / 1000;
-            const titleMatch = badge.getAttribute('title')?.match(/模型: (.+)/);
-            if (titleMatch) {
-                const model = titleMatch[1];
-                const cooldownUntil = credInfo.model_cooldowns[model];
-                if (cooldownUntil) {
-                    const remaining = Math.max(0, Math.floor(cooldownUntil - currentTime));
-                    if (remaining > 0) {
-                        const shortModel = model.replace('gemini-', '').replace('-exp', '')
-                            .replace('2.0-', '2-').replace('1.5-', '1.5-');
-                        const timeDisplay = formatCooldownTime(remaining).replace(/s$/, '').replace(/ /g, '');
-                        badge.innerHTML = `🔧 ${shortModel}: ${timeDisplay}`;
-                    }
-                }
-            }
+        const currentTime = Date.now() / 1000;
+        const remaining = Math.max(0, Math.floor(until - currentTime));
+        if (remaining > 0) {
+            const timeStr = formatCooldownTime(remaining).replace(/s$/, '').replace(/ /g, '');
+            const icon = reason === 'protection' ? '🛡️' : '🚫';
+            const label = vendor.charAt(0).toUpperCase() + vendor.slice(1);
+            badge.innerHTML = `${icon} ${label}: ${timeStr}`;
         }
     });
 }

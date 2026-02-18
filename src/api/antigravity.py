@@ -216,6 +216,7 @@ async def _check_and_apply_quota_threshold(
             credential_name=credential_name,
             model_name=target,
             cooldown_until=cooldown_until,
+            reason="protection",
             mode="antigravity",
         )
 

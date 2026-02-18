@@ -170,6 +170,7 @@ class CredentialManager:
         credential_name: str,
         model_name: str,
         cooldown_until: Optional[float],
+        reason: str = "exhausted",
         mode: str = "geminicli"
     ) -> bool:
         """设置凭证在指定模型上的冷却时间"""
@@ -179,7 +180,7 @@ class CredentialManager:
             if not hasattr(backend, "set_model_cooldown"):
                 return False
             return await backend.set_model_cooldown(
-                credential_name, model_name, cooldown_until, mode=mode
+                credential_name, model_name, cooldown_until, reason=reason, mode=mode
             )
         except Exception as e:
             log.error(f"Error setting model cooldown {credential_name}/{model_name}: {e}")
@@ -253,6 +254,7 @@ class CredentialManager:
             # 等级变化时清除所有模型冷却（升级或降级都会重置额度）
             if old_tier and old_tier.lower() != new_tier.lower() and model_cooldowns:
                 updates["model_cooldowns"] = {}
+                updates["cooldown_reasons"] = {}
 
             await self._storage_adapter.update_credential_state(filename, updates, mode=mode)
         except Exception:

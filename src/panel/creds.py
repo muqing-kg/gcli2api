@@ -265,6 +265,7 @@ async def get_creds_status_common(
             "last_success": summary["last_success"],
             "backend_type": backend_type,
             "model_cooldowns": summary.get("model_cooldowns", {}),
+            "cooldown_reasons": summary.get("cooldown_reasons", {}),
             "subscription_tier": summary.get("subscription_tier"),
         }
 
@@ -701,6 +702,7 @@ async def get_cred_detail(
             "backend_type": backend_type,
             "user_email": file_status.get("user_email"),
             "model_cooldowns": file_status.get("model_cooldowns", {}),
+            "cooldown_reasons": file_status.get("cooldown_reasons", {}),
         }
 
         # 只对 geminicli 模式添加 preview 字段
@@ -1131,8 +1133,10 @@ async def get_credential_quota(
                     # 清除不合理的冷却时间
                     if models_to_clear:
                         new_cooldowns = {k: v for k, v in model_cooldowns.items() if k not in models_to_clear}
+                        cooldown_reasons = cred_state.get("cooldown_reasons", {})
+                        new_reasons = {k: v for k, v in cooldown_reasons.items() if k not in models_to_clear}
                         await storage_adapter.update_credential_state(
-                            filename, {"model_cooldowns": new_cooldowns}, mode=mode
+                            filename, {"model_cooldowns": new_cooldowns, "cooldown_reasons": new_reasons}, mode=mode
                         )
                         log.info(f"已自动清除 {filename} 的 {len(models_to_clear)} 个模型冷却时间")
 
