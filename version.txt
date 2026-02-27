@@ -1,4 +1,4 @@
-full_hash=3a2aec4900e6e2139a2156e3cb50ab351e5fb7ab
-short_hash=3a2aec4
-message=优化流式传输时的报错显示
-date=2026-02-27 23:32:41 +0800
+full_hash=acd3dc69ec44a9c563c5d2802f11cda969307c3e
+short_hash=acd3dc6
+message=Merge upstream/master: 合并上游优化与保留本地功能
+date=2026-02-28 00:35:06 +0800
