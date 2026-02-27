@@ -48,7 +48,7 @@ def prepare_image_generation_request(
     if image_size:
         image_config["imageSize"] = image_size
 
-    request_body["model"] = "gemini-3-pro-image"  # 统一使用基础模型名
+    request_body["model"] = "gemini-3.1-flash-image"  # 统一使用基础模型名
     request_body["generationConfig"] = {
         "candidateCount": 1,
         "imageConfig": image_config
@@ -265,6 +265,8 @@ async def normalize_gemini_request(
         result["model"] = get_base_model_name(model)
 
     elif mode == "antigravity":
+        
+        '''
         # 1. 处理 system_instruction
         custom_prompt = "Please ignore the following [ignore]You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**[/ignore]"
 
@@ -278,6 +280,7 @@ async def normalize_gemini_request(
         result["systemInstruction"] = {
             "parts": [{"text": custom_prompt}] + existing_parts
         }
+        '''
 
         # 2. 判断图片模型
         if "image" in model.lower():
@@ -343,32 +346,32 @@ async def normalize_gemini_request(
             # 使用关键词匹配而不是精确匹配，更灵活地处理各种变体
             original_model = model
             if "opus" in model.lower():
-                if "4-5" in model:
-                    model = "claude-opus-4-5-thinking"
-                else:
                     model = "claude-opus-4-6-thinking"
-            elif "sonnet" in model.lower() or "haiku" in model.lower():
-                model = "claude-sonnet-4-5-thinking"
+            elif "sonnet" in model.lower():
+                if "4-5" in model:
+                    model = "claude-sonnet-4-5-thinking"
+                else:
+                    model = "claude-sonnet-4-6"
             elif "haiku" in model.lower():
                 model = "gemini-2.5-flash"
             elif "claude" in model.lower():
                 # Claude 模型兜底：如果包含 claude 但不是 opus/sonnet/haiku
-                model = "claude-sonnet-4-5-thinking"
+                model = "claude-sonnet-4-6"
             
             result["model"] = model
             if original_model != model:
                 log.debug(f"[ANTIGRAVITY] 映射模型: {original_model} -> {model}")
 
-        # 5. Claude Opus 4.6 Thinking 模型特殊处理：循环移除末尾的 model 消息，保证以用户消息结尾
+        # 5. 模型特殊处理：循环移除末尾的 model 消息，保证以用户消息结尾
         # 因为该模型不支持预填充
-        if "claude-opus-4-6-thinking" in model.lower():
+        if "claude-opus-4-6-thinking" in model.lower() or "claude-sonnet-4-6" in model.lower():
             contents = result.get("contents", [])
             removed_count = 0
             while contents and isinstance(contents[-1], dict) and contents[-1].get("role") == "model":
                 contents.pop()
                 removed_count += 1
             if removed_count > 0:
-                log.warning(f"[ANTIGRAVITY] claude-opus-4-6-thinking 不支持预填充，移除了 {removed_count} 条末尾 model 消息")
+                log.warning(f"[ANTIGRAVITY] {model} 不支持预填充，移除了 {removed_count} 条末尾 model 消息")
                 result["contents"] = contents
 
         # 6. 移除 antigravity 模式不支持的字段

@@ -1176,6 +1176,19 @@ class MongoDBManager:
                 log.warning(f"Credential {filename} not found")
                 return False
 
+            # 同步写入 Redis TTL key
+            if self._redis_enabled:
+                cd_key = self._rk_cd(mode, filename, escaped_model_name)
+                if cooldown_until is None:
+                    await self._redis.delete(cd_key)
+                else:
+                    ttl = int(cooldown_until - time.time())
+                    if ttl > 0:
+                        await self._redis.setex(cd_key, ttl, str(cooldown_until))
+                    else:
+                        # 冷却已经过期，确保清除
+                        await self._redis.delete(cd_key)
+
             log.debug(f"Set model cooldown: {filename}, model_name={model_name}, cooldown_until={cooldown_until}, reason={reason}")
             return True
 
