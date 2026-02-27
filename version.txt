@@ -1,4 +1,4 @@
-full_hash=7782be96b7cfdd4e1c62727ff3133e50a1d15077
-short_hash=7782be9
-message=Merge branch 'master' of github.com:muqing-kg/gcli2api
-date=2026-02-27 12:50:35 +0800
+full_hash=3a2aec4900e6e2139a2156e3cb50ab351e5fb7ab
+short_hash=3a2aec4
+message=优化流式传输时的报错显示
+date=2026-02-27 23:32:41 +0800
