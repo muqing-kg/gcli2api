@@ -1,4 +1,4 @@
-full_hash=acd3dc69ec44a9c563c5d2802f11cda969307c3e
-short_hash=acd3dc6
-message=Merge upstream/master: 合并上游优化与保留本地功能
-date=2026-02-28 00:35:06 +0800
+full_hash=43e82b5fbd4930dcc96cd02205b032df16cf70ec
+short_hash=43e82b5
+message=Merge pull request #347 from afu6609/fix/clean-schema-claude-patternProperties
+date=2026-02-28 15:39:48 +0800
