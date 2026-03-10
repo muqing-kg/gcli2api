@@ -1732,6 +1732,26 @@
             <div id="manageTab" class="tab-content">
                 <h3>GCLI凭证文件管理</h3>
                 <p>管理所有GCLI认证文件，查看状态和执行操作</p>
+                <div class="status info" style="margin-bottom: 20px;">
+                    <strong>📡 API地址（点击复制）：</strong>
+                    <table style="margin-top: 6px; border-collapse: collapse; width: 100%;">
+                        <tr>
+                            <td style="color: #666; width: 90px;">OpenAI格式</td>
+                            <td><code id="gcliOpenaiUrl" onclick="copyApiEndpoint(this)" title="点击复制"
+                                    style="background: #e8f0fe; padding: 2px 6px; border-radius: 3px; cursor: pointer;"></code></td>
+                        </tr>
+                        <tr>
+                            <td style="color: #666;">Claude格式</td>
+                            <td><code id="gcliClaudeUrl" onclick="copyApiEndpoint(this)" title="点击复制"
+                                    style="background: #e8f0fe; padding: 2px 6px; border-radius: 3px; cursor: pointer;"></code></td>
+                        </tr>
+                        <tr>
+                            <td style="color: #666;">Gemini格式</td>
+                            <td><code id="gcliGeminiUrl" onclick="copyApiEndpoint(this)" title="点击复制"
+                                    style="background: #e8f0fe; padding: 2px 6px; border-radius: 3px; cursor: pointer;"></code></td>
+                        </tr>
+                    </table>
+                </div>
 
                 <!-- 检验功能说明 -->
                 <div class="status info" style="margin-bottom: 20px;">
@@ -1856,6 +1876,26 @@
             <div id="antigravity-manageTab" class="tab-content">
                 <h3>Antigravity凭证文件管理</h3>
                 <p>管理所有Antigravity认证文件，查看状态和执行操作</p>
+                <div class="status info" style="margin-bottom: 20px;">
+                    <strong>📡 API地址（点击复制）：</strong>
+                    <table style="margin-top: 6px; border-collapse: collapse; width: 100%;">
+                        <tr>
+                            <td style="color: #666; width: 90px;">OpenAI格式</td>
+                            <td><code id="antOpenaiUrl" onclick="copyApiEndpoint(this)" title="点击复制"
+                                    style="background: #e8f0fe; padding: 2px 6px; border-radius: 3px; cursor: pointer;"></code></td>
+                        </tr>
+                        <tr>
+                            <td style="color: #666;">Claude格式</td>
+                            <td><code id="antClaudeUrl" onclick="copyApiEndpoint(this)" title="点击复制"
+                                    style="background: #e8f0fe; padding: 2px 6px; border-radius: 3px; cursor: pointer;"></code></td>
+                        </tr>
+                        <tr>
+                            <td style="color: #666;">Gemini格式</td>
+                            <td><code id="antGeminiUrl" onclick="copyApiEndpoint(this)" title="点击复制"
+                                    style="background: #e8f0fe; padding: 2px 6px; border-radius: 3px; cursor: pointer;"></code></td>
+                        </tr>
+                    </table>
+                </div>
 
                 <!-- 检验功能说明 -->
                 <div class="status info" style="margin-bottom: 20px;">
@@ -2375,6 +2415,41 @@
             </div>
         </div>
     </div>
+
+    <script>
+        function copyApiEndpoint(element) {
+            if (!element || !element.textContent) {
+                return;
+            }
+
+            navigator.clipboard.writeText(element.textContent).then(() => {
+                const previousBackground = element.style.background;
+                element.style.background = '#b7f0b7';
+                setTimeout(() => {
+                    element.style.background = previousBackground;
+                }, 800);
+            }).catch(() => { });
+        }
+
+        (() => {
+            const origin = window.location.origin;
+            const endpointMap = {
+                gcliOpenaiUrl: `${origin}/v1`,
+                gcliClaudeUrl: `${origin}/v1`,
+                gcliGeminiUrl: origin,
+                antOpenaiUrl: `${origin}/antigravity/v1`,
+                antClaudeUrl: `${origin}/antigravity/v1`,
+                antGeminiUrl: `${origin}/antigravity`,
+            };
+
+            Object.entries(endpointMap).forEach(([id, value]) => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.textContent = value;
+                }
+            });
+        })();
+    </script>
 
     <!-- 配额保护设置弹窗 -->
     <div class="modal" id="quotaThresholdModal">
